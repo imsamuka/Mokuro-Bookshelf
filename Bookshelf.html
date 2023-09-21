@@ -330,21 +330,24 @@
             })()
             const path = decodeURI(key.substring(storagePrefix.length))
 
+            const isEmpty = Object.keys(mokuro).length === 0
             // if that information is not available yet, gather and save it
             if (
+                isEmpty ||
                 undefined === mokuro.cover_page ||
                 undefined === mokuro.last_page_idx ||
                 undefined === mokuro.page_idx
             ) {
                 if (!(await collectPagesAndImage(mokuro, path)))
                     return
-                localStorage.setItem(key, JSON.stringify(mokuro))
+                // Mokuro breaks a bit if we save it with only these few data
+                if (!isEmpty) localStorage.setItem(key, JSON.stringify(mokuro))
             }
 
             displayBook(mokuro, path);
         }
 
-        window.addEventListener('storage', (event) => {
+        window.addEventListener('storage', async (event) => {
             const boxElement = document.getElementById(event.key)
 
             if (boxElement == null) {
@@ -355,6 +358,13 @@
 
             if (mokuro == null) {
                 return boxElement.remove()
+            }
+
+            if (undefined === mokuro.cover_page || undefined === mokuro.last_page_idx) {
+                const path = decodeURI(event.key.substring(storagePrefix.length))
+                if (await collectPagesAndImage(mokuro, path))
+                    localStorage.setItem(event.key, JSON.stringify(mokuro))
+                return
             }
 
             const totalPages = mokuro.last_page_idx
