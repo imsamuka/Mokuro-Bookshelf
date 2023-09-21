@@ -146,8 +146,17 @@
         async function collectPagesAndImage(mokuro, html_path) {
 
             // parse manga html
-            const res = await makeRequest("GET", html_path)
-            const html = new DOMParser().parseFromString(res.responseText, "text/html")
+
+            const html = await (async () => {
+                try {
+                    const res = await makeRequest("GET", html_path)
+                    return new DOMParser().parseFromString(res.responseText, "text/html")
+                } catch (e) {
+                    console.error(`Failed to parse html '${html_path}'':`, e)
+                    return null;
+                }
+            })()
+            if (!html) return
 
             function pagePath(page_idx) {
                 return decodeURI(html.getElementById("page" + page_idx)
@@ -156,6 +165,7 @@
 
             // get page amount
             mokuro.last_page_idx = html.querySelectorAll(".page").length
+            if (!mokuro.last_page_idx) return
             if (mokuro.page_idx === undefined || mokuro.page_idx >= mokuro.last_page_idx) {
                 mokuro.page_idx = 0
             }
@@ -193,6 +203,8 @@
             if (rx !== -1) {
                 mokuro.cover_page = mokuro.cover_page.slice(rx + 1)
             }
+
+            return true // success
         }
 
         function displayBook(mokuro, html_path) {
@@ -294,8 +306,14 @@
         async function tryDisplayMokuroBook(key) {
             if (!key.startsWith(storagePrefix)) return;
 
-            const mokuro = JSON.parse(localStorage.getItem(key));
-            const path = decodeURI(key.substring(storagePrefix.length));
+            const mokuro = (() => {
+                try { return JSON.parse(localStorage.getItem(key) || "{}") || {} }
+                catch (e) {
+                    console.error(`Failed to parse mokuro storage '${key}':`, e)
+                    return {}
+                }
+            })()
+            const path = decodeURI(key.substring(storagePrefix.length))
 
             // if that information is not available yet, gather and save it
             if (
@@ -303,7 +321,8 @@
                 undefined === mokuro.last_page_idx ||
                 undefined === mokuro.page_idx
             ) {
-                await collectPagesAndImage(mokuro, path)
+                if (!(await collectPagesAndImage(mokuro, path)))
+                    return
                 localStorage.setItem(key, JSON.stringify(mokuro))
             }
 
