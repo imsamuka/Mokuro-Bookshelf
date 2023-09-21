@@ -86,7 +86,8 @@
             constructor() {
                 super()
                 this.attachShadow({ mode: 'open' })
-                this.shadowRoot.appendChild(document.getElementById('progress-bar-template').content.cloneNode(true))
+                this.shadowRoot.appendChild(
+                    document.getElementById('progress-bar-template').content.cloneNode(true))
             }
 
             get progress() {
@@ -120,17 +121,8 @@
         window.customElements.define('progress-bar', ProgressBar)
 
         function determineProgressStatus(currentPage, totalPages) {
-
-            if (1 === currentPage) {
-                return 'future'
-            }
-            else if (currentPage === totalPages) {
-                return 'finished'
-            }
-            else {
-                return 'reading'
-            }
-
+            return 1 === currentPage ? 'future' :
+                (currentPage === totalPages ? 'finished' : 'reading')
         }
 
         function displayBook(mokuro, series, html) {
@@ -192,9 +184,7 @@
             // Do nothing if section name is unknown.
             switch (sectionName) {
                 case 'reading':
-                    break
                 case 'future':
-                    break
                 case 'finished':
                     break
                 default:
@@ -202,32 +192,33 @@
             }
 
             const container = document.querySelector(`#${sectionName}`)
-            const matches = container.querySelectorAll("[data-title]")
-
-            var matchesArray = Array.from(matches)
-            let sorted = matchesArray
+            const matches = Array.from(container.querySelectorAll("[data-title]"))
 
             switch (sortBy) {
                 case 'title':
-                    sorted = matchesArray.sort((a, b) => a.dataset.title.localeCompare(b.dataset.title))
+                    matches.sort((a, b) => a.dataset.title.localeCompare(b.dataset.title))
                     break
                 case 'remaining-pages':
-                    sorted = matchesArray.sort((a, b) => a.dataset.remainingPages.localeCompare(b.dataset.remainingPages, undefined, { 'numeric': true }))
+                    matches.sort((a, b) => a.dataset.remainingPages.localeCompare(
+                        b.dataset.remainingPages, undefined, { 'numeric': true }))
                     break
                 default:
                     return
             }
 
-            if (!sortAscending) {
-                sorted.reverse()
-            }
+            if (!sortAscending) matches.reverse()
 
-            sorted.forEach(e => document.querySelector(`#${sectionName}`).appendChild(e))
-
+            matches.forEach(e => document.querySelector(`#${sectionName}`).appendChild(e))
         }
 
-        window.onstorage = event => {
+        function deleteFromMokuro() {
+            // TODO: Have a confirmation dialogue.
+            const volumeToRemove = event.srcElement.parentElement
+            volumeToRemove.remove()
+            localStorage.removeItem(volumeToRemove.id)
+        }
 
+        window.addEventListener('storage', (event) => {
             const boxElement = document.getElementById(event.key)
             const mokuro = JSON.parse(event.newValue)
             const totalPages = mokuro.last_page_idx
@@ -251,17 +242,45 @@
                 sortSection(newProgressStatus, 'title')
             }
 
-        }
+        })
 
-        function deleteFromMokuro() {
-            // TODO: Have a confirmation dialogue.
-            const volumeToRemove = event.srcElement.parentElement
-            volumeToRemove.remove()
-            localStorage.removeItem(volumeToRemove.id)
-        }
+        document.addEventListener('DOMContentLoaded', function () {
+            const keys = Object.keys(localStorage)
+            const storagePrefix = "mokuro_"
 
+            for (let key of keys) {
+                if (!key.startsWith(storagePrefix)) {
+                    continue;
+                }
+                const path = decodeURI(key.substring(storagePrefix.length));
+                const fileName = path.split('/').pop().replace('.html', '');
+
+                const mokuro = JSON.parse(localStorage.getItem(key));
+                if (undefined === mokuro.cover_page) {
+                    continue;
+                }
+
+                const image = `${path.replace('.html', '')}/${mokuro.cover_page}`;
+
+                displayBook(mokuro, fileName, path);
+            }
+
+            // Sort sections by title.
+            changeReadingSort('title')
+            sortSection('future', 'title')
+            sortSection('finished', 'title')
+
+            function changeReadingSort(newSortBy) {
+                sortBy = newSortBy
+                sortSection('reading', sortBy)
+            }
+
+            function changeSortDirection() {
+                sortAscending = !sortAscending
+                sortSection('reading', sortBy)
+            }
+        })
     </script>
-
 </head>
 
 <body>
@@ -331,46 +350,6 @@
     <h2>Finished</h2>
 
     <div id="finished" class="section"></div>
-
-    <script>
-        const keys = Object.keys(localStorage)
-        const storagePrefix = "mokuro_"
-
-        for (let key of keys) {
-            if (!key.startsWith(storagePrefix)) {
-                continue;
-            }
-            const path = decodeURI(key.substring(storagePrefix.length));
-            const fileName = path.split('/').pop().replace('.html', '');
-
-            const mokuro = JSON.parse(localStorage.getItem(key));
-            if (undefined === mokuro.cover_page) {
-                continue;
-            }
-
-            const image = `${path.replace('.html', '')}/${mokuro.cover_page}`;
-
-
-            displayBook(mokuro, fileName, path);
-
-        }
-
-        // Sort sections by title.
-        changeReadingSort('title')
-        sortSection('future', 'title')
-        sortSection('finished', 'title')
-
-        function changeReadingSort(newSortBy) {
-            sortBy = newSortBy
-            sortSection('reading', sortBy)
-        }
-
-        function changeSortDirection() {
-            sortAscending = !sortAscending
-            sortSection('reading', sortBy)
-        }
-
-    </script>
 </body>
 
 </html>
