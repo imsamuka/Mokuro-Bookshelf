@@ -76,6 +76,7 @@
     </style>
 
     <script>
+        const storagePrefix = "mokuro_"
         let sortBy = 'title'
         let sortAscending = true
 
@@ -131,13 +132,13 @@
                 let xhr = new XMLHttpRequest()
                 xhr.open(method, url)
                 xhr.onload = () => {
-                    if (this.status >= 200 && this.status < 300) {
+                    if (xhr.status >= 200 && xhr.status < 300) {
                         resolve(xhr)
                     } else {
-                        reject({ status: this.status, statusText: xhr.statusText })
+                        reject({ status: xhr.status, statusText: xhr.statusText })
                     }
                 }
-                xhr.onerror = () => reject({ status: this.status, statusText: xhr.statusText })
+                xhr.onerror = () => reject({ status: xhr.status, statusText: xhr.statusText })
                 xhr.send()
             });
         }
@@ -287,14 +288,41 @@
 
         function deleteFromMokuro() {
             // TODO: Have a confirmation dialogue.
-            const volumeToRemove = event.srcElement.parentElement
-            volumeToRemove.remove()
-            localStorage.removeItem(volumeToRemove.id)
+            localStorage.removeItem(event.srcElement.parentElement.id)
+        }
+
+        async function tryDisplayMokuroBook(key) {
+            if (!key.startsWith(storagePrefix)) return;
+
+            const mokuro = JSON.parse(localStorage.getItem(key));
+            const path = decodeURI(key.substring(storagePrefix.length));
+
+            // if that information is not available yet, gather and save it
+            if (
+                undefined === mokuro.cover_page ||
+                undefined === mokuro.last_page_idx ||
+                undefined === mokuro.page_idx
+            ) {
+                await collectPagesAndImage(mokuro, path)
+                localStorage.setItem(key, JSON.stringify(mokuro))
+            }
+
+            displayBook(mokuro, path);
         }
 
         window.addEventListener('storage', (event) => {
             const boxElement = document.getElementById(event.key)
+
+            if (boxElement == null) {
+                return tryDisplayMokuroBook(event.key)
+            }
+
             const mokuro = JSON.parse(event.newValue)
+
+            if (mokuro == null) {
+                return boxElement.remove()
+            }
+
             const totalPages = mokuro.last_page_idx
 
             const currentPage = mokuro.page_idx + 1
@@ -318,28 +346,8 @@
         })
 
         document.addEventListener('DOMContentLoaded', function () {
-            const keys = Object.keys(localStorage)
-            const storagePrefix = "mokuro_"
-
-            for (const key of keys) {
-                if (!key.startsWith(storagePrefix)) continue;
-
-                const mokuro = JSON.parse(localStorage.getItem(key));
-                const path = decodeURI(key.substring(storagePrefix.length));
-
-                // if that information is not available yet, gather and save it
-                if (
-                    undefined === mokuro.cover_page ||
-                    undefined === mokuro.last_page_idx ||
-                    undefined === mokuro.page_idx
-                ) {
-                    collectPagesAndImage(mokuro, path).then(() => {
-                        localStorage.setItem(key, JSON.stringify(mokuro))
-                        displayBook(mokuro, path);
-                    })
-                } else {
-                    displayBook(mokuro, path);
-                }
+            for (const key of Object.keys(localStorage)) {
+                tryDisplayMokuroBook(key)
             }
         })
     </script>
