@@ -76,6 +76,21 @@
     </style>
 
     <script>
+        // Options
+
+        // string of the path to find new manga. ALWAYS END WITH '/'
+        // * Examples for nginx
+        //    - "https://domain.com/manga/Bookshelf.html" -> "/manga/"
+        //    - "https://domain.com/Bookshelf.html" -> "/"
+        //    - "https://domain.com" -> "/somewhere/" (using index.html instead of Bookshelf.html)
+        //
+        // * On linux, with local archives, its preferable to
+        //     use "/home/user/.../" instead of "file:///home/user/.../"
+        //
+        // On firefox local files, depends on 'security.fileuri.strict_origin_policy' being False
+        const bs_path = ""
+        ///////////
+
         const storagePrefix = "mokuro_"
         let sortBy = 'title'
         let sortAscending = true
@@ -364,9 +379,76 @@
             }
         })
 
-        document.addEventListener('DOMContentLoaded', function () {
+        async function nginxFindAll(html_path) {
+            try {
+                const res = await makeRequest("GET", html_path)
+                const htmlDoc = new DOMParser().parseFromString(res.responseText, 'text/html')
+
+                const html_files = Array.from(htmlDoc.querySelectorAll('pre>a[href$=".html"]'))
+                    .map(e => html_path + e.attributes["href"].value)
+
+                const dirs = Array.from(htmlDoc.querySelectorAll('pre>a[href$="/"]'))
+                    .filter(e => /^[^._!-]/.test(e.attributes["href"].value))
+                    .map(e => html_path + e.attributes["href"].value)
+                    .map(nginxFindAll)
+
+                return html_files.concat((await Promise.all(dirs)).flat())
+            } catch (e) {
+                console.error("Failed to collect nginx html files:", e)
+                return []
+            }
+        }
+
+        // On firefox, depends on 'security.fileuri.strict_origin_policy' being False
+        async function localFindAll(html_path) {
+            try {
+                const res = await makeRequest("GET", html_path)
+                const files = res.responseText.split('\n')
+                    .map(f => f.split(" "))
+                    .filter(info => info[0] == "201:")
+
+                const html_files = files.filter(info => info[4] == "FILE")
+                    .map(info => html_path + info[1])
+                    .filter(f => f.toLowerCase().endsWith(".html"))
+
+                const dirs = files.filter(info => info[4] == "DIRECTORY")
+                    .filter(info => /^[^._!-]/.test(info[1]))
+                    .map(info => html_path + info[1] + "/")
+                    .map(localFindAll)
+
+                return html_files.concat((await Promise.all(dirs)).flat())
+            } catch (e) {
+                console.error("Failed to collect local html files:", e)
+                return []
+            }
+        }
+
+        async function collectAllFiles(path) {
+            const stored = Object.keys(localStorage)
+                .filter(k => k.startsWith(storagePrefix))
+
+            // We have a re-encode step to remove inconsistencies
+
+            const nginxFiles = (await nginxFindAll(path))
+                .map(key => storagePrefix + encodeURI(decodeURI(key)))
+                .filter(key => !stored.includes(key))
+            console.log("New Nginx files:", nginxFiles)
+
+            const localFiles = (await localFindAll(path))
+                .map(key => storagePrefix + encodeURI(decodeURI(key)))
+                .filter(key => !stored.includeskey)
+            console.log("New Local files:", localFiles)
+
+            nginxFiles.forEach(k => tryDisplayMokuroBook(k))
+            localFiles.forEach(k => tryDisplayMokuroBook(k))
+        }
+
+        document.addEventListener('DOMContentLoaded', async function () {
             for (const key of Object.keys(localStorage)) {
                 tryDisplayMokuroBook(key)
+            }
+            if (bs_path) {
+                collectAllFiles(bs_path)
             }
         })
     </script>
