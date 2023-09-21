@@ -1,374 +1,376 @@
 <!DOCTYPE html>
 <html>
+
 <head>
-<title>Bookshelf</title>
-<meta charset="utf-8"/>
+    <title>Bookshelf</title>
+    <meta charset="utf-8" />
 
-<style>
-div.section {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
+    <style>
+        div.section {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
 
-div.box { text-align: center; position: relative; }
+        div.box {
+            text-align: center;
+            position: relative;
+        }
 
-div.images { border: solid thin black; }
+        div.images {
+            border: solid thin black;
+        }
 
-div.imagebox {
-  position: relative;
-  border: solid thin black;
-  line-height: 0;
-  width: 125px;
-  height: 180px;
-  overflow: hidden;
-}
+        div.imagebox {
+            position: relative;
+            border: solid thin black;
+            line-height: 0;
+            width: 125px;
+            height: 180px;
+            overflow: hidden;
+        }
 
-div.imagebox a {
-  width: 100%;
-  height: 100%;
-  top: 0;
-  left: 0;
-  position: absolute;
-  background-size: cover;
-  background-repeat: no-repeat;
-}
+        div.imagebox a {
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            position: absolute;
+            background-size: cover;
+            background-repeat: no-repeat;
+        }
 
-div.imagebox a img {
-  object-fit: cover;
-  aobject-position: center center;
-  min-width: 125px;
-  height: 180px;
-}
+        div.imagebox a img {
+            object-fit: cover;
+            aobject-position: center center;
+            min-width: 125px;
+            height: 180px;
+        }
 
-div.pending {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  background-color: white;
-  opacity: 0.55;
-  pointer-events: none;
-}
+        div.pending {
+            position: absolute;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            background-color: white;
+            opacity: 0.55;
+            pointer-events: none;
+        }
 
-.delete {
-  position: absolute;
-  top: 0;
-  right: 0;
-  display: none;
-}
+        .delete {
+            position: absolute;
+            top: 0;
+            right: 0;
+            display: none;
+        }
 
-.delete:hover {
-  cursor: pointer;
-}
+        .delete:hover {
+            cursor: pointer;
+        }
 
-/* If Migaku is enabled, hide the toolbar on this page. */
-#migaku-toolbar-minimized { display: none !important;  }
+        /* If Migaku is enabled, hide the toolbar on this page. */
+        #migaku-toolbar-minimized {
+            display: none !important;
+        }
+    </style>
 
-</style>
+    <script>
+        let sortBy = 'title'
+        let sortAscending = true
 
-<script>
+        class ProgressBar extends HTMLElement {
+            static get observedAttributes() {
+                return ['progress', 'remaining']
+            }
 
-let sortBy = 'title'
-let sortAscending = true
+            constructor() {
+                super()
+                this.attachShadow({ mode: 'open' })
+                this.shadowRoot.appendChild(document.getElementById('progress-bar-template').content.cloneNode(true))
+            }
 
-class ProgressBar extends HTMLElement {
-  static get observedAttributes() {
-    return ['progress', 'remaining']
-  }
+            get progress() {
+                return this.shadowRoot.querySelector('.progress').textContent
+            }
+            set progress(value) {
+                this.shadowRoot.querySelector('.progress').textContent = value
+                this.shadowRoot.querySelector('.progress-bar-percentage').style.width = `${value}%`
+            }
 
-  constructor() {
-    super()
-    this.attachShadow({mode: 'open'})
-    this.shadowRoot.appendChild(document.getElementById('progress-bar-template').content.cloneNode(true))
-  }
+            get remaining() {
+                return this.shadowRoot.querySelector('.remaining').textContent
+            }
+            set remaining(value) {
+                this.shadowRoot.querySelector('.remaining').textContent = value
+            }
 
-  get progress() {
-    return this.shadowRoot.querySelector('.progress').textContent
-  }
-  set progress(value) {
-    this.shadowRoot.querySelector('.progress').textContent = value
-    this.shadowRoot.querySelector('.progress-bar-percentage').style.width = `${value}%`
-  }
+            attributeChangedCallback(name, oldValue, newValue) {
+                switch (name) {
+                    case 'progress':
+                        this.progress = newValue
+                        break
+                    case 'remaining':
+                        this.remaining = newValue
+                        break
+                }
+            }
 
-  get remaining() {
-    return this.shadowRoot.querySelector('.remaining').textContent
-  }
-  set remaining(value) {
-    this.shadowRoot.querySelector('.remaining').textContent = value
-  }
+        }
 
-  attributeChangedCallback(name, oldValue, newValue) {
-    switch(name) {
-      case 'progress':
-        this.progress = newValue
-        break
-      case 'remaining':
-        this.remaining = newValue
-        break
-    }
-  }
+        window.customElements.define('progress-bar', ProgressBar)
 
-}
+        function determineProgressStatus(currentPage, totalPages) {
 
-window.customElements.define('progress-bar', ProgressBar)
+            if (1 === currentPage) {
+                return 'future'
+            }
+            else if (currentPage === totalPages) {
+                return 'finished'
+            }
+            else {
+                return 'reading'
+            }
 
-function determineProgressStatus(currentPage, totalPages) {
+        }
 
-  if (1 === currentPage)  {
-    return 'future'
-  }
-  else if (currentPage === totalPages) {
-    return 'finished'
-  }
-  else {
-    return 'reading'
-  }
+        function displayBook(mokuro, series, html) {
 
-}
+            const mokuroKey = `mokuro_${encodeURI(html)}`
+            const currentPage = mokuro.page_idx + 1
+            const totalPages = mokuro.last_page_idx
 
-function displayBook(mokuro, series, html) {
+            const percentComplete = parseInt(currentPage / totalPages * 100)
+            const percentRemaining = 100 - percentComplete
 
-  const mokuroKey = `mokuro_${encodeURI(html)}`
-  const currentPage = mokuro.page_idx + 1
-  const totalPages = mokuro.last_page_idx
+            const volumeTitle = html.split('/').pop().replace('.html', '')
 
-  const percentComplete = parseInt(currentPage/totalPages*100)
-  const percentRemaining = 100 - percentComplete
+            const image = `${html.replace('.html', '')}/${mokuro.cover_page}`
+            const remainingPages = totalPages - currentPage
 
-  const volumeTitle = html.split('/').pop().replace('.html', '')
+            const progressStatus = determineProgressStatus(currentPage, totalPages)
 
-  const image = `${html.replace('.html', '')}/${mokuro.cover_page}`
-  const remainingPages = totalPages - currentPage
+            // Container for a single volume and its progress.
+            const boxElement = document.getElementById('book-template').content.cloneNode(true).querySelectorAll('div')[0]
+            //const boxElement = document.createElement('div')
+            boxElement.id = mokuroKey
+            boxElement.dataset.title = volumeTitle
+            boxElement.dataset.currentPage = currentPage
+            boxElement.dataset.totalPages = totalPages
+            boxElement.dataset.remainingPages = remainingPages
+            boxElement.dataset.progressStatus = progressStatus
+            boxElement.dataset.percentComplete = percentComplete
+            boxElement.dataset.percentRemaining = percentRemaining
 
-  const progressStatus = determineProgressStatus(currentPage, totalPages)
+            // Container for the volume cover image and a link to the Mokuro HTML file.
+            const imageBoxElement = boxElement.getElementsByClassName('imagebox')[0]
+            // Link to the Mokuro HTML file.  This cannot contain the image or else the CSS box model seems to change.
+            imageBoxElement.getElementsByTagName('a')[0].href = html
+            const imageElement = imageBoxElement.getElementsByTagName('img')[0]
+            imageElement.src = image
+            //imageElement.style.maxHeight = '100%'
+            //imageElement.style.maxWidth = '100%'
 
-  // Container for a single volume and its progress.
-  const boxElement = document.getElementById('book-template').content.cloneNode(true).querySelectorAll('div')[0]
-  //const boxElement = document.createElement('div')
-  boxElement.id = mokuroKey
-  boxElement.dataset.title = volumeTitle
-  boxElement.dataset.currentPage = currentPage
-  boxElement.dataset.totalPages = totalPages
-  boxElement.dataset.remainingPages = remainingPages
-  boxElement.dataset.progressStatus = progressStatus
-  boxElement.dataset.percentComplete = percentComplete
-  boxElement.dataset.percentRemaining = percentRemaining
+            //width: 125px
+            //height: 180px
 
-  // Container for the volume cover image and a link to the Mokuro HTML file.
-  const imageBoxElement = boxElement.getElementsByClassName('imagebox')[0]
-  // Link to the Mokuro HTML file.  This cannot contain the image or else the CSS box model seems to change.
-  imageBoxElement.getElementsByTagName('a')[0].href = html
-  const imageElement = imageBoxElement.getElementsByTagName('img')[0]
-  imageElement.src = image
-  //imageElement.style.maxHeight = '100%'
-  //imageElement.style.maxWidth = '100%'
+            // A white block with opacity set to make part of the volume cover image appear transparent based on one's reading progress.
+            imageBoxElement.getElementsByClassName('pending')[0].style.width = `${percentRemaining}%`
 
-  //width: 125px
-  //height: 180px
+            // Container for the progress bar.
 
-  // A white block with opacity set to make part of the volume cover image appear transparent based on one's reading progress.
-  imageBoxElement.getElementsByClassName('pending')[0].style.width = `${percentRemaining}%`
+            const progressBarElement = boxElement.querySelector('progress-bar')
+            progressBarElement.setAttribute('progress', percentComplete)
+            progressBarElement.setAttribute('remaining', remainingPages)
 
-  // Container for the progress bar.
+            const containerElement = document.getElementById(progressStatus)
+            containerElement.appendChild(boxElement)
 
-  const progressBarElement = boxElement.querySelector('progress-bar')
-  progressBarElement.setAttribute('progress', percentComplete)
-  progressBarElement.setAttribute('remaining', remainingPages)
+        }
 
-  const containerElement = document.getElementById(progressStatus)
-  containerElement.appendChild(boxElement)
+        function sortSection(sectionName, sortBy) {
 
-}
+            // Do nothing if section name is unknown.
+            switch (sectionName) {
+                case 'reading':
+                    break
+                case 'future':
+                    break
+                case 'finished':
+                    break
+                default:
+                    return
+            }
 
-function sortSection(sectionName, sortBy) {
+            const container = document.querySelector(`#${sectionName}`)
+            const matches = container.querySelectorAll("[data-title]")
 
-  // Do nothing if section name is unknown.
-  switch (sectionName) {
-    case 'reading':
-      break
-    case 'future':
-      break
-    case 'finished':
-      break
-    default:
-      return
-  }
+            var matchesArray = Array.from(matches)
+            let sorted = matchesArray
 
-  const container = document.querySelector(`#${sectionName}`)
-  const matches = container.querySelectorAll("[data-title]")
+            switch (sortBy) {
+                case 'title':
+                    sorted = matchesArray.sort((a, b) => a.dataset.title.localeCompare(b.dataset.title))
+                    break
+                case 'remaining-pages':
+                    sorted = matchesArray.sort((a, b) => a.dataset.remainingPages.localeCompare(b.dataset.remainingPages, undefined, { 'numeric': true }))
+                    break
+                default:
+                    return
+            }
 
-  var matchesArray = Array.from(matches)
-  let sorted = matchesArray
+            if (!sortAscending) {
+                sorted.reverse()
+            }
 
-  switch (sortBy) {
-    case 'title':
-      sorted = matchesArray.sort((a, b) => a.dataset.title.localeCompare(b.dataset.title))
-      break
-    case 'remaining-pages':
-      sorted = matchesArray.sort((a, b) => a.dataset.remainingPages.localeCompare(b.dataset.remainingPages, undefined, {'numeric': true}))
-      break
-    default:
-      return
-  }
+            sorted.forEach(e => document.querySelector(`#${sectionName}`).appendChild(e))
 
-  if (!sortAscending) {
-    sorted.reverse()
-  }
+        }
 
-  sorted.forEach(e => document.querySelector(`#${sectionName}`).appendChild(e))
+        window.onstorage = event => {
 
-}
+            const boxElement = document.getElementById(event.key)
+            const mokuro = JSON.parse(event.newValue)
+            const totalPages = mokuro.last_page_idx
 
-window.onstorage = event => {
+            const currentPage = mokuro.page_idx + 1
+            const remainingPages = totalPages - currentPage
 
-  const boxElement = document.getElementById(event.key)
-  const mokuro = JSON.parse(event.newValue)
-  const totalPages = mokuro.last_page_idx
+            const percentComplete = parseInt(currentPage / totalPages * 100)
+            const percentRemaining = 100 - percentComplete
 
-  const currentPage = mokuro.page_idx + 1
-  const remainingPages = totalPages - currentPage
+            const progressBarElement = boxElement.querySelector('progress-bar')
+            progressBarElement.progress = parseInt(currentPage / totalPages * 100)
+            progressBarElement.remaining = remainingPages
 
-  const percentComplete = parseInt(currentPage/totalPages*100)
-  const percentRemaining = 100 - percentComplete
+            const oldProgressStatus = boxElement.dataset.progressStatus
+            const newProgressStatus = determineProgressStatus(currentPage, totalPages)
+            if (oldProgressStatus !== newProgressStatus) {
+                boxElement.dataset.progressStatus = newProgressStatus
+                const newContainerElement = document.getElementById(newProgressStatus)
+                newContainerElement.appendChild(boxElement)
+                sortSection(newProgressStatus, 'title')
+            }
 
-  const progressBarElement = boxElement.querySelector('progress-bar')
-  progressBarElement.progress = parseInt(currentPage/totalPages*100)
-  progressBarElement.remaining = remainingPages
+        }
 
-  const oldProgressStatus = boxElement.dataset.progressStatus
-  const newProgressStatus = determineProgressStatus(currentPage, totalPages)
-  if (oldProgressStatus !== newProgressStatus) {
-    boxElement.dataset.progressStatus = newProgressStatus
-    const newContainerElement = document.getElementById(newProgressStatus)
-    newContainerElement.appendChild(boxElement)
-    sortSection(newProgressStatus, 'title')
-  }
+        function deleteFromMokuro() {
+            // TODO: Have a confirmation dialogue.
+            const volumeToRemove = event.srcElement.parentElement
+            volumeToRemove.remove()
+            localStorage.removeItem(volumeToRemove.id)
+        }
 
-}
-
-function deleteFromMokuro() {
-  // TODO: Have a confirmation dialogue.
-  const volumeToRemove = event.srcElement.parentElement
-  volumeToRemove.remove()
-  localStorage.removeItem(volumeToRemove.id)
-}
-
-</script>
+    </script>
 
 </head>
 
 <body>
+    <!--<button onclick="sortSection('reading', 'title')">Sort by Title</button>-->
 
-<!--<button onclick="sortSection('reading', 'title')">Sort by Title</button>-->
+    <template id="book-template">
+        <div class="box">
 
-<template id="book-template">
-<div class="box">
+            <div class="imagebox">
+                <a href=""><img /></a>
+                <div class="pending"></div>
+            </div>
 
-<div class="imagebox">
-<a href=""><img /></a>
-<div class="pending"></div>
-</div>
+            <progress-bar></progress-bar>
 
-<progress-bar></progress-bar>
+            <span class="delete" onclick="deleteFromMokuro()">❌</span>
 
-<span class="delete" onclick="deleteFromMokuro()">❌</span>
+        </div>
+    </template>
 
-</div>
-</template>
+    <template id="progress-bar-template">
+        <style>
+            .progress-bar {
+                background-color: #EEE;
+                position: relative;
+                border: solid thin black;
+                margin-top: 3px;
+                font-size: 12px;
+            }
 
-<template id="progress-bar-template">
-<style>
+            .progress-bar-percentage {
+                background-color: #8BD;
+                padding: 5px 0px;
+                color: #000;
+                text-align: center;
+                height: 1em;
+            }
 
-.progress-bar {
-  background-color: #EEE;
-  position: relative;
-  border: solid thin black;
-  margin-top: 3px;
-  font-size: 12px;
-}
+            .progress-bar-percentage>span {
+                display: inline-block;
+                position: absolute;
+                width: 100%;
+                left: 0;
+            }
+        </style>
 
-.progress-bar-percentage {
-  background-color: #8BD;
-  padding: 5px 0px;
-  color: #000;
-  text-align: center;
-  height: 1em;
-}
+        <div class="progress-bar">
+            <div class="progress-bar-percentage">
+                <span class="progress-text"><span class="progress"></span>% (<span class="remaining"></span>p)</span>
+            </div>
+        </div>
+    </template>
 
-.progress-bar-percentage > span {
-  display: inline-block;
-  position: absolute;
-  width: 100%;
-  left: 0;
-}
-</style>
+    <h2>Reading</h2>
 
-<div class="progress-bar">
-<div class="progress-bar-percentage">
-<span class="progress-text"><span class="progress"></span>% (<span class="remaining"></span>p)</span>
-</div>
-</div>
-</template>
+    <div style="margin-bottom: 3px;">
+        Sort by: <button onclick="changeReadingSort('remaining-pages')">Pages Remaining</button>
+        <span onclick="changeSortDirection()">⇅</span>
+    </div>
 
-<h2>Reading</h2>
+    <div id="reading" class="section"></div>
 
-<div style="margin-bottom: 3px;">
-Sort by: <button onclick="changeReadingSort('remaining-pages')">Pages Remaining</button>
-<span onclick="changeSortDirection()">⇅</span>
-</div>
+    <h2>Future</h2>
 
-<div id="reading" class="section"></div>
+    <div id="future" class="section"></div>
 
-<h2>Future</h2>
+    <h2>Finished</h2>
 
-<div id="future" class="section"></div>
+    <div id="finished" class="section"></div>
 
-<h2>Finished</h2>
+    <script>
+        const keys = Object.keys(localStorage)
+        const storagePrefix = "mokuro_"
 
-<div id="finished" class="section"></div>
+        for (let key of keys) {
+            if (!key.startsWith(storagePrefix)) {
+                continue;
+            }
+            const path = decodeURI(key.substring(storagePrefix.length));
+            const fileName = path.split('/').pop().replace('.html', '');
 
-<script>
-const keys = Object.keys(localStorage)
-const storagePrefix = "mokuro_"
+            const mokuro = JSON.parse(localStorage.getItem(key));
+            if (undefined === mokuro.cover_page) {
+                continue;
+            }
 
-for (let key of keys) {
-  if (!key.startsWith(storagePrefix)) {
-    continue;
-  }
-  const path = decodeURI(key.substring(storagePrefix.length));
-  const fileName = path.split('/').pop().replace('.html', '');
-
-  const mokuro = JSON.parse(localStorage.getItem(key));
-  if (undefined === mokuro.cover_page) {
-    continue;
-  }
-
-  const image = `${path.replace('.html', '')}/${mokuro.cover_page}`;
+            const image = `${path.replace('.html', '')}/${mokuro.cover_page}`;
 
 
-  displayBook(mokuro, fileName, path);
+            displayBook(mokuro, fileName, path);
 
-}
+        }
 
-// Sort sections by title.
-changeReadingSort('title')
-sortSection('future', 'title')
-sortSection('finished', 'title')
+        // Sort sections by title.
+        changeReadingSort('title')
+        sortSection('future', 'title')
+        sortSection('finished', 'title')
 
-function changeReadingSort(newSortBy) {
-  sortBy = newSortBy
-  sortSection('reading', sortBy)
-}
+        function changeReadingSort(newSortBy) {
+            sortBy = newSortBy
+            sortSection('reading', sortBy)
+        }
 
-function changeSortDirection() {
-  sortAscending = !sortAscending
-  sortSection('reading', sortBy)
-}
+        function changeSortDirection() {
+            sortAscending = !sortAscending
+            sortSection('reading', sortBy)
+        }
 
-</script>
-
+    </script>
 </body>
 
 </html>
-
