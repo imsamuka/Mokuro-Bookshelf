@@ -126,18 +126,86 @@
                 (currentPage === totalPages ? 'finished' : 'reading')
         }
 
-        function displayBook(mokuro, series, html) {
+        function makeRequest(method, url) {
+            return new Promise((resolve, reject) => {
+                let xhr = new XMLHttpRequest()
+                xhr.open(method, url)
+                xhr.onload = () => {
+                    if (this.status >= 200 && this.status < 300) {
+                        resolve(xhr)
+                    } else {
+                        reject({ status: this.status, statusText: xhr.statusText })
+                    }
+                }
+                xhr.onerror = () => reject({ status: this.status, statusText: xhr.statusText })
+                xhr.send()
+            });
+        }
 
-            const mokuroKey = `mokuro_${encodeURI(html)}`
+        async function collectPagesAndImage(mokuro, html_path) {
+
+            // parse manga html
+            const res = await makeRequest("GET", html_path)
+            const html = new DOMParser().parseFromString(res.responseText, "text/html")
+
+            function pagePath(page_idx) {
+                return decodeURI(html.getElementById("page" + page_idx)
+                    .firstChild.style.backgroundImage.slice(5, -2))
+            }
+
+            // get page amount
+            mokuro.last_page_idx = html.querySelectorAll(".page").length
+            if (mokuro.page_idx === undefined || mokuro.page_idx >= mokuro.last_page_idx) {
+                mokuro.page_idx = 0
+            }
+
+            // Check the first, second, and last files.
+            const possibleCovers = [pagePath(0), pagePath(1), pagePath(mokuro.last_page_idx - 1)];
+            for (const name of ['i-000a', 'cover_omo', 'cover']) {
+                const match = possibleCovers.find(i => i.includes(name));
+                if (match !== undefined) {
+                    mokuro.cover_page = match;
+                    break;
+                }
+            }
+
+            // TODO: Test this.
+            if (mokuro.cover_page === undefined) {
+                // Look for "cover" across all the remaining pages.
+                for (p = 2; p < mokuro.last_page_idx - 2; p++) {
+                    const image_path = pagePath(p)
+                    const image_filename = image_path;
+                    if (image_filename.toLowerCase().includes("cover")) {
+                        mokuro.cover_page = image_filename;
+                        break;
+                    }
+                }
+            }
+
+            // No cover image was found.  Use the first image.
+            if (mokuro.cover_page === undefined) {
+                mokuro.cover_page = pagePath(0)
+            }
+
+            // remove the root
+            const rx = mokuro.cover_page.indexOf("/")
+            if (rx !== -1) {
+                mokuro.cover_page = mokuro.cover_page.slice(rx + 1)
+            }
+        }
+
+        function displayBook(mokuro, html_path) {
+
+            const mokuroKey = `mokuro_${encodeURI(html_path)}`
             const currentPage = mokuro.page_idx + 1
             const totalPages = mokuro.last_page_idx
 
             const percentComplete = parseInt(currentPage / totalPages * 100)
             const percentRemaining = 100 - percentComplete
 
-            const volumeTitle = html.split('/').pop().replace('.html', '')
+            const volumeTitle = html_path.split('/').pop().replace('.html', '')
 
-            const image = `${html.replace('.html', '')}/${mokuro.cover_page}`
+            const image = `${html_path.replace('.html', '')}/${mokuro.cover_page}`
             const remainingPages = totalPages - currentPage
 
             const progressStatus = determineProgressStatus(currentPage, totalPages)
@@ -157,7 +225,7 @@
             // Container for the volume cover image and a link to the Mokuro HTML file.
             const imageBoxElement = boxElement.getElementsByClassName('imagebox')[0]
             // Link to the Mokuro HTML file.  This cannot contain the image or else the CSS box model seems to change.
-            imageBoxElement.getElementsByTagName('a')[0].href = html
+            imageBoxElement.getElementsByTagName('a')[0].href = html_path
             const imageElement = imageBoxElement.getElementsByTagName('img')[0]
             imageElement.src = image
             //imageElement.style.maxHeight = '100%'
@@ -212,6 +280,11 @@
             matches.forEach(e => document.querySelector(`#${sectionName}`).appendChild(e))
         }
 
+        function changeSortDirection() {
+            sortAscending = !sortAscending
+            sortSection('reading', sortBy)
+        }
+
         function deleteFromMokuro() {
             // TODO: Have a confirmation dialogue.
             const volumeToRemove = event.srcElement.parentElement
@@ -242,43 +315,31 @@
                 newContainerElement.appendChild(boxElement)
                 sortSection(newProgressStatus, 'title')
             }
-
         })
 
         document.addEventListener('DOMContentLoaded', function () {
             const keys = Object.keys(localStorage)
             const storagePrefix = "mokuro_"
 
-            for (let key of keys) {
-                if (!key.startsWith(storagePrefix)) {
-                    continue;
-                }
-                const path = decodeURI(key.substring(storagePrefix.length));
-                const fileName = path.split('/').pop().replace('.html', '');
+            for (const key of keys) {
+                if (!key.startsWith(storagePrefix)) continue;
 
                 const mokuro = JSON.parse(localStorage.getItem(key));
-                if (undefined === mokuro.cover_page) {
-                    continue;
+                const path = decodeURI(key.substring(storagePrefix.length));
+
+                // if that information is not available yet, gather and save it
+                if (
+                    undefined === mokuro.cover_page ||
+                    undefined === mokuro.last_page_idx ||
+                    undefined === mokuro.page_idx
+                ) {
+                    collectPagesAndImage(mokuro, path).then(() => {
+                        localStorage.setItem(key, JSON.stringify(mokuro))
+                        displayBook(mokuro, path);
+                    })
+                } else {
+                    displayBook(mokuro, path);
                 }
-
-                const image = `${path.replace('.html', '')}/${mokuro.cover_page}`;
-
-                displayBook(mokuro, fileName, path);
-            }
-
-            // Sort sections by title.
-            changeReadingSort('title')
-            sortSection('future', 'title')
-            sortSection('finished', 'title')
-
-            function changeReadingSort(newSortBy) {
-                sortBy = newSortBy
-                sortSection('reading', sortBy)
-            }
-
-            function changeSortDirection() {
-                sortAscending = !sortAscending
-                sortSection('reading', sortBy)
             }
         })
     </script>
